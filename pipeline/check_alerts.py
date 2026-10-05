@@ -37,9 +37,19 @@ def load_rules():
 
 def latest_closes(symbol):
     conn = sqlite3.connect(DB)
-    rows = conn.execute(
-        "SELECT date, close, unit FROM daily_prices WHERE symbol=? "
-        "ORDER BY date DESC LIMIT 2", (symbol,)).fetchall()
+    if symbol == "CRUSH":
+        rows = conn.execute(
+            "SELECT b.date, 44*(m.close/2000.0) + 11*o.close - b.close, '$/bu' "
+            "FROM (SELECT date, close FROM daily_prices WHERE symbol='ZS') b "
+            "JOIN (SELECT date, close FROM daily_prices WHERE symbol='ZM') m "
+            "  ON b.date = m.date "
+            "JOIN (SELECT date, close FROM daily_prices WHERE symbol='ZL') o "
+            "  ON b.date = o.date "
+            "ORDER BY b.date DESC LIMIT 2").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT date, close, unit FROM daily_prices WHERE symbol=? "
+            "ORDER BY date DESC LIMIT 2", (symbol,)).fetchall()
     conn.close()
     return rows  # [(date, price, unit), ...] newest first
 

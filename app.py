@@ -68,6 +68,26 @@ def load_curve():
 
 
 @st.cache_data(ttl=3600)
+def load_crush():
+    """Board crush margin history: 44 lbs meal + 11 lbs oil - 1 bushel soybeans.
+
+    Returns [(date, crush_$/bu, oil_share), ...]. Computed live from prices.db.
+    """
+    conn = sqlite3.connect("data/prices.db")
+    rows = conn.execute(
+        "SELECT b.date, 44*(m.close/2000.0) + 11*o.close - b.close AS crush, "
+        "11*o.close / (44*(m.close/2000.0) + 11*o.close) AS oil_share "
+        "FROM (SELECT date, close FROM daily_prices WHERE symbol='ZS') b "
+        "JOIN (SELECT date, close FROM daily_prices WHERE symbol='ZM') m "
+        "  ON b.date = m.date "
+        "JOIN (SELECT date, close FROM daily_prices WHERE symbol='ZL') o "
+        "  ON b.date = o.date "
+        "ORDER BY b.date").fetchall()
+    conn.close()
+    return [(datetime.strptime(d, "%Y-%m-%d").date(), c, s) for d, c, s in rows]
+
+
+@st.cache_data(ttl=3600)
 def load_alert_rules():
     rules, cur = [], None
     try:
@@ -130,6 +150,7 @@ def wasde_stats():
 
 prices = load_prices()
 curve = load_curve()
+crush = load_crush()
 cot = load_cot()
 wasde_dates = load_wasde()
 today = date.today()
@@ -168,8 +189,9 @@ for col, label in zip((m1, m2, m3, m4),
     col.metric(f"{label} ({SYM[label]})", fmt_price(c, u),
                f"{chg:+.2f}%", delta_color="normal")
 
-tab_prices, tab_curve, tab_cot, tab_wasde, tab_alerts = st.tabs(
-    ["📈 Prices", "📉 Forward Curve", "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
+tab_prices, tab_curve, tab_crush, tab_cot, tab_wasde, tab_alerts = st.tabs(
+    ["📈 Prices", "📉 Forward Curve", "🫘 Crush Spread",
+     "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
 
 with tab_prices:
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
@@ -219,6 +241,43 @@ with tab_curve:
                   f"{spread:+.2f} {unit} vs front")
         st.caption("Contango usually means comfortable supply; backwardation means "
                    "the market wants grain now — often bullish.")
+
+with tab_crush:
+    st.subheader("Soybean crush spread — the crusher's margin")
+    dates = [d for d, _, _ in crush]
+    vals = [c for _, c, _ in crush]
+    shares = [s for _, _, s in crush]
+    cur, prev = vals[-1], vals[-2]
+    avg_all = sum(vals) / len(vals)
+    yr = vals[-252:] if len(vals) > 252 else vals
+    avg_yr = sum(yr) / len(yr)
+    pctile = 100 * sum(1 for v in vals if v <= cur) / len(vals)
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Gross crush margin", f"${cur:.2f}/bu", f"{cur - prev:+.2f} vs prior day")
+    r2.metric("1-year average", f"${avg_yr:.2f}/bu",
+              f"{cur - avg_yr:+.2f} vs avg", delta_color="normal")
+    r3.metric("Richness", f"{pctile:.0f}th percentile",
+              "richer than this on few days" if pctile > 80 else
+              "weaker than this on few days" if pctile < 20 else "mid-range vs history")
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(dates, vals, linewidth=1.1, label="Crush margin ($/bu)")
+    ax.axhline(avg_all, color="red", linestyle="--", linewidth=1,
+               label=f"All-time avg ${avg_all:.2f}")
+    ax.set_title("Board crush: 44 lbs meal + 11 lbs oil − 1 bushel soybeans")
+    ax.grid(alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    st.pyplot(fig)
+    fig2, ax2 = plt.subplots(figsize=(10, 2.6))
+    ax2.plot(dates, [100 * s for s in shares], linewidth=1.1, color="green")
+    ax2.set_title("Oil's share of total product value (%)")
+    ax2.grid(alpha=0.3)
+    fig2.tight_layout()
+    st.pyplot(fig2)
+    st.caption("The crush is what a soybean crusher earns turning beans into meal "
+               "and oil. Wide crush → crushers run hard and buy more beans (supports "
+               "soybean prices). Thin crush → plants slow down. Oil share shows which "
+               "product is driving the margin — food vs fuel demand.")
 
 with tab_cot:
     comm_label = st.selectbox("Contract", list(COT_COMMS), key="cot_comm")
@@ -283,9 +342,14 @@ with tab_alerts:
     else:
         for rule in rules:
             sym = rule["symbol"]
-            unit = UNIT.get(sym, "$/bu")
-            d, c, _, _ = prices[sym][-1]
-            pd, pc, _, _ = prices[sym][-2]
+            if sym == "CRUSH":
+                d, c = crush[-1][0], crush[-1][1]
+                pd, pc = crush[-2][0], crush[-2][1]
+                unit = "$/bu"
+            else:
+                unit = UNIT.get(sym, "$/bu")
+                d, c, _, _ = prices[sym][-1]
+                pd, pc, _, _ = prices[sym][-2]
             move = 100 * (c - pc) / pc
             status = []
             if rule.get("above") and c >= rule["above"]:

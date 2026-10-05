@@ -22,5 +22,9 @@
   "KE": {
     "above": true,
     "below": true
+  },
+  "CRUSH": {
+    "above": true,
+    "below": true
   }
 }
