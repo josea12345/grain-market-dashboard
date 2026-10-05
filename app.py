@@ -30,6 +30,15 @@ def fmt_price(c, unit):
     return f"${c:,.2f}/{unit[2:]}" if unit == "$/ton" else f"${c:.2f}/{unit[2:]}"
 
 
+def ordinal(n):
+    n = int(round(n))
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
 @st.cache_data(ttl=3600)
 def load_prices():
     conn = sqlite3.connect("data/prices.db")
@@ -115,6 +124,104 @@ def cot_signals():
         out[comm] = {"net": cur, "pctile": pctile, "chg4": chg4,
                      "date": series[-1][0], "signal": sig, "hint": hint}
     return out
+
+
+def build_brief():
+    """Auto-generated market brief: one synthesis of every dataset in the app.
+    Returns (lede, [(section_title, [bullets])])."""
+    label_for = {v: k for k, v in SYM.items()}
+    sections = []
+
+    # ---- prices ----
+    moves = []
+    for label, sym in SYM.items():
+        d, c, _, u = prices[sym][-1]
+        _, pc, _, _ = prices[sym][-2]
+        moves.append((label, 100 * (c - pc) / pc, c, u, d))
+    moves.sort(key=lambda m: abs(m[1]), reverse=True)
+    big = moves[0]
+    up = sum(1 for m in moves if m[1] > 0)
+    pb = [f"Biggest mover: {big[0]} {big[1]:+.2f}% to {fmt_price(big[2], big[3])}."]
+    pb.append(f"{up} of {len(moves)} commodities higher on the day "
+              f"({', '.join(f'{m[0]} {m[1]:+.1f}%' for m in moves[1:3])}).")
+    sections.append(("📈 Prices", pb))
+
+    # ---- crush ----
+    cv, pv = crush[-1][1], crush[-2][1]
+    allv = [c for _, c, _ in crush]
+    cpct = 100 * sum(1 for v in allv if v <= cv) / len(allv)
+    sections.append(("🫘 Crush", [
+        f"Board crush ${cv:.2f}/bu ({cv - pv:+.2f} on the day) — "
+        f"{ordinal(cpct)} percentile vs history, "
+        f"{'rich' if cpct >= 75 else 'soft' if cpct <= 25 else 'mid-range'}.",
+    ]))
+
+    # ---- positioning ----
+    sigs = cot_signals()
+    extremes = [(c, s) for c, s in sigs.items()
+                if s["pctile"] >= 90 or s["pctile"] <= 10]
+    inv = {v: k for k, v in COT_COMMS.items()}
+    if extremes:
+        eb = [f"{inv[c]}: funds {ordinal(s["pctile"])}-percentile "
+              f"{'long' if s['pctile'] >= 90 else 'short'} "
+              f"({s['net'] / 1000:+,.0f}k net) — crowded."
+              for c, s in extremes]
+    else:
+        eb = ["No positioning extremes right now — no market above the 90th "
+              "or below the 10th percentile."]
+    sections.append(("📡 Positioning", eb))
+
+    # ---- seasonality ----
+    wk = today.isocalendar()[1]
+    diffs = []
+    for label, sym in SYM.items():
+        s = seas[sym]
+        if s["cur"] and wk in s["avg"]:
+            diffs.append((label, s["cur"][-1][1] - s["avg"][wk]))
+    diffs.sort(key=lambda x: x[1], reverse=True)
+    sb = [f"2026 is running {'hot' if diffs[0][1] > 0 else 'cold'} vs seasonal norms — "
+          f"hottest: {diffs[0][0]} ({diffs[0][1]:+.0f} pts), "
+          f"coolest: {diffs[-1][0]} ({diffs[-1][1]:+.0f} pts)."]
+    sections.append(("📅 Seasonality", sb))
+
+    # ---- curves ----
+    cb = []
+    for label, sym in SYM.items():
+        rows = curve.get(sym, [])
+        if len(rows) >= 2:
+            sp = rows[-1][2] - rows[0][2]
+            cb.append(f"{label}: {'contango' if sp > 0 else 'backwardation'} "
+                      f"({sp:+.2f} {UNIT[sym]} front→deferred)")
+    if cb:
+        sections.append(("📉 Curves", cb))
+
+    # ---- wasde ----
+    last_w = max(d for d in wasde_dates if d <= today)
+    stt = wasde_stats()
+    wb = [f"{(today - last_w).days} days since the last WASDE ({last_w}). "
+          f"Report days average {stt['Corn']['wasde_avg']:.2f}% daily moves in corn — "
+          f"plan around the next one (monthly, usually around the 10th)."]
+    sections.append(("📰 WASDE", wb))
+
+    # ---- alerts ----
+    rules = load_alert_rules()
+    sections.append(("🔔 Alerts",
+                     [f"{len(rules)} rules watching. Details on the Alerts tab."]))
+
+    # ---- lede: the single most notable thing ----
+    notes = []
+    if extremes:
+        worst = max(extremes, key=lambda e: abs(e[1]["pctile"] - 50))
+        notes.append(f"funds are at extreme {ordinal(worst[1]["pctile"])}-percentile "
+                     f"{'long' if worst[1]['pctile'] >= 90 else 'short'} "
+                     f"{inv[worst[0]].lower()}")
+    if abs(big[1]) >= 2:
+        notes.append(f"{big[0].lower()} moved {big[1]:+.1f}%")
+    if cpct >= 90 or cpct <= 10:
+        notes.append(f"crush margin is at its {ordinal(cpct)} percentile (${cv:.2f}/bu)")
+    lede = ("Today's tape: " + "; ".join(notes) + "." if notes
+            else "Quiet tape — no extremes standing out across prices, positioning, or crush.")
+    return lede, sections
 
 
 @st.cache_data(ttl=3600)
@@ -249,9 +356,19 @@ for col, label in zip((m1, m2, m3, m4),
     col.metric(f"{label} ({SYM[label]})", fmt_price(c, u),
                f"{chg:+.2f}%", delta_color="normal")
 
-tab_prices, tab_curve, tab_crush, tab_seas, tab_cot, tab_wasde, tab_alerts = st.tabs(
-    ["📈 Prices", "📉 Forward Curve", "🫘 Crush Spread", "📅 Seasonality",
+tab_brief, tab_prices, tab_curve, tab_crush, tab_seas, tab_cot, tab_wasde, tab_alerts = st.tabs(
+    ["🌅 Brief", "📈 Prices", "📉 Forward Curve", "🫘 Crush Spread", "📅 Seasonality",
      "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
+
+with tab_brief:
+    lede, brief_sections = build_brief()
+    st.subheader(f"Market brief — {today.strftime('%A, %B %d, %Y')}")
+    st.write(lede)
+    st.divider()
+    for title, bullets in brief_sections:
+        st.markdown(f"**{title}**")
+        for b in bullets:
+            st.write("• " + b)
 
 with tab_prices:
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
@@ -316,7 +433,7 @@ with tab_crush:
     r1.metric("Gross crush margin", f"${cur:.2f}/bu", f"{cur - prev:+.2f} vs prior day")
     r2.metric("1-year average", f"${avg_yr:.2f}/bu",
               f"{cur - avg_yr:+.2f} vs avg", delta_color="normal")
-    r3.metric("Richness", f"{pctile:.0f}th percentile",
+    r3.metric("Richness", f"{ordinal(pctile)} percentile",
               "richer than this on few days" if pctile > 80 else
               "weaker than this on few days" if pctile < 20 else "mid-range vs history")
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -389,7 +506,7 @@ with tab_cot:
         s = signals[comm]
         col.metric(label_for[comm],
                    f"{s['net'] / 1000:+,.0f}k net",
-                   f"{s['pctile']:.0f}th percentile · {s['chg4'] / 1000:+,.0f}k in 4 wks")
+                   f"{ordinal(s["pctile"])} percentile · {s["chg4"] / 1000:+,.0f}k in 4 wks")
         col.caption(f"{s['signal']} — {s['hint']}")
     st.caption(f"Latest COT report: {max(s['date'] for s in signals.values())}")
     st.divider()
