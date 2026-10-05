@@ -38,6 +38,8 @@ st.markdown("""
 .brief-card li { margin-bottom: 4px; font-size: 14.5px; }
 .section-head { font-size: 19px; font-weight: 700; margin: 6px 0 4px 0; }
 .section-sub { color: #5A5A5A; font-size: 13.5px; margin-bottom: 12px; }
+.plain { background: #EAF1FA; border-left: 3px solid #4A90D9; border-radius: 0 10px 10px 0;
+    padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; color: #2C3E50; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,6 +79,11 @@ def ordinal(n):
     else:
         suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suf}"
+
+
+def plain(text):
+    st.markdown("<div class='plain'>💡 <b>What am I looking at?</b> " + text + "</div>",
+                unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=3600)
@@ -471,6 +478,7 @@ with tab_brief:
     st.markdown(f"<div class='section-head'>Market brief — "
                 f"{today.strftime('%A, %B %d, %Y')}</div>",
                 unsafe_allow_html=True)
+    plain("I read every chart on this site and wrote you the short version. Start here each morning.")
     st.markdown(f"<div class='lede-card'>{lede}</div>", unsafe_allow_html=True)
     cards = "".join(
         f"<div class='brief-card'><div class='btitle'>{title}</div><ul>"
@@ -480,6 +488,7 @@ with tab_brief:
     st.markdown(cards, unsafe_allow_html=True)
 
 with tab_prices:
+    plain("Daily prices for six grain markets, going back to 2010. Drag the date slider to zoom into any period.")
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
     sym = SYM[comm_label]
     unit = UNIT[sym]
@@ -501,6 +510,7 @@ with tab_prices:
     k3.metric("Period average", fmt_price(sum(closes) / len(closes), unit))
 
 with tab_curve:
+    plain("What grain would cost for delivery in future months. Later months costing more means comfortable supply; near months costing more means buyers are scrambling.")
     comm_label = st.selectbox("Contract", list(SYM), key="cv_comm")
     sym = SYM[comm_label]
     unit = UNIT[sym]
@@ -583,6 +593,7 @@ with tab_curve:
 
 with tab_crush:
     st.markdown("<div class='section-head'>Soybean crush spread — the crusher's margin</div>", unsafe_allow_html=True)
+    plain("The profit from turning soybeans into meal and oil. When it's high, crushers run hard and buy more beans, which supports soybean prices.")
     dates = [d for d, _, _ in crush]
     vals = [c for _, c, _ in crush]
     shares = [s for _, _, s in crush]
@@ -622,6 +633,7 @@ with tab_seas:
     st.markdown("<div class='section-head'>Seasonality — what the calendar usually does to prices</div>"
                 "<div class='section-sub'>Each year rebased to 100 on its first trading day, averaged by week "
                 "across 2010–present. Shaded band = full historical range.</div>", unsafe_allow_html=True)
+    plain("What prices usually do at this time of year, averaged over 16 years. The red line is this year \u2014 running above the gray band means unusually strong.")
     comm_label = st.selectbox("Contract", list(SYM), key="se_comm")
     sym = SYM[comm_label]
     s = seas[sym]
@@ -661,6 +673,7 @@ with tab_cot:
     st.markdown("<div class='section-head'>📡 Crowded-trade radar</div>"
                 "<div class='section-sub'>Where fund positioning sits vs its own history (2020–present). "
                 "Extremes are contrarian signals — crowded longs are vulnerable to a washout.</div>", unsafe_allow_html=True)
+    plain("What hedge funds are betting, from official weekly government data. When everyone is already long, there is nobody left to buy \u2014 rallies get fragile.")
     signals = cot_signals()
     label_for = {v: k for k, v in COT_COMMS.items()}
     cols = st.columns(len(signals))
@@ -696,6 +709,7 @@ with tab_cot:
 with tab_wasde:
     stats = wasde_stats()
     st.markdown("<div class='section-head'>Do prices jump on WASDE report days? Yes.</div>", unsafe_allow_html=True)
+    plain("Once a month the USDA publishes its big crop report. Prices move about 30% more on those days \u2014 this tab proves it with 80 reports of data.")
     labels = list(stats)
     for i in range(0, len(labels), 3):
         cols = st.columns(3)
@@ -753,6 +767,7 @@ with tab_wasde:
                      f"extreme-vs-neutral move ratio {v['vol_ratio']:.2f}x")
 
 with tab_alerts:
+    plain("Your personal watchlist. If a price crosses one of your levels or makes a big daily move, you get a morning message.")
     st.markdown("<div class='section-head'>Price alert rules</div>"
                 "<div class='section-sub'>Checked every morning after the data refresh. "
                 "Crossing alerts fire once per crossing; big-move alerts fire on the day.</div>", unsafe_allow_html=True)
