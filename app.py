@@ -16,6 +16,46 @@ matplotlib.use("Agg")
 st.set_page_config(page_title="Grain Market Dashboard",
                    page_icon="🌽", layout="wide")
 
+# ---------- professional styling ----------
+st.markdown("""
+<style>
+.hero { background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%);
+        border-radius: 14px; padding: 24px 28px; margin-bottom: 20px; }
+.hero-title { color: #FFFFFF; font-size: 30px; font-weight: 700; letter-spacing: -0.5px; }
+.hero-sub { color: #D8F3DC; font-size: 15px; margin-top: 6px; }
+.hero-meta { color: #B7E4C7; font-size: 12.5px; margin-top: 10px; }
+[data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #E9E7E0;
+    border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+[data-testid="stMetricLabel"] { font-weight: 600; }
+.stTabs [data-baseweb="tab-list"] { gap: 2px; }
+.stTabs [data-baseweb="tab"] { font-size: 15px; font-weight: 600; padding: 10px 16px; }
+.lede-card { background: #EFF6F0; border-left: 4px solid #2D6A4F; border-radius: 0 12px 12px 0;
+    padding: 14px 18px; font-size: 16px; margin: 4px 0 18px 0; }
+.brief-card { background: #FFFFFF; border: 1px solid #E9E7E0; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.brief-card .btitle { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.brief-card ul { margin: 0; padding-left: 18px; }
+.brief-card li { margin-bottom: 4px; font-size: 14.5px; }
+.section-head { font-size: 19px; font-weight: 700; margin: 6px 0 4px 0; }
+.section-sub { color: #5A5A5A; font-size: 13.5px; margin-bottom: 12px; }
+</style>
+""", unsafe_allow_html=True)
+
+# chart polish applied to every figure
+plt.rcParams.update({
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "axes.edgecolor": "#D8D5CC",
+    "axes.labelcolor": "#333333",
+    "xtick.color": "#555555",
+    "ytick.color": "#555555",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.22,
+    "grid.color": "#B9B5A9",
+})
+
 SYM = {"Corn": "ZC", "Soybeans": "ZS", "Soybean Meal": "ZM",
        "Soybean Oil": "ZL", "CBOT Wheat": "ZW", "KC Wheat": "KE"}
 UNIT = {"ZC": "$/bu", "ZS": "$/bu", "ZM": "$/ton",
@@ -322,9 +362,15 @@ seas = load_seasonality()
 cot = load_cot()
 wasde_dates = load_wasde()
 
-st.title("🌽 Grain Market Dashboard")
-st.caption("Grain & oilseed futures — prices, forward curves, CFTC positioning, "
-           "USDA WASDE effects. Data refreshes daily.")
+latest_date = max(d for sym in prices for d, _, _, _ in prices[sym])
+st.markdown(f"""
+<div class="hero">
+  <div class="hero-title">🌽 Grain Market Dashboard</div>
+  <div class="hero-sub">Grain &amp; oilseed futures — prices, forward curves, crush spreads,
+  fund positioning, WASDE effects, alerts</div>
+  <div class="hero-meta">Data as of {latest_date.strftime('%B %d, %Y')} · Refreshes every morning</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ---- headline metrics ----
 latest = {}
@@ -362,13 +408,16 @@ tab_brief, tab_prices, tab_curve, tab_crush, tab_seas, tab_cot, tab_wasde, tab_a
 
 with tab_brief:
     lede, brief_sections = build_brief()
-    st.subheader(f"Market brief — {today.strftime('%A, %B %d, %Y')}")
-    st.write(lede)
-    st.divider()
-    for title, bullets in brief_sections:
-        st.markdown(f"**{title}**")
-        for b in bullets:
-            st.write("• " + b)
+    st.markdown(f"<div class='section-head'>Market brief — "
+                f"{today.strftime('%A, %B %d, %Y')}</div>",
+                unsafe_allow_html=True)
+    st.markdown(f"<div class='lede-card'>{lede}</div>", unsafe_allow_html=True)
+    cards = "".join(
+        f"<div class='brief-card'><div class='btitle'>{title}</div><ul>"
+        + "".join(f"<li>{b}</li>" for b in bullets)
+        + "</ul></div>"
+        for title, bullets in brief_sections)
+    st.markdown(cards, unsafe_allow_html=True)
 
 with tab_prices:
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
@@ -420,7 +469,7 @@ with tab_curve:
                    "the market wants grain now — often bullish.")
 
 with tab_crush:
-    st.subheader("Soybean crush spread — the crusher's margin")
+    st.markdown("<div class='section-head'>Soybean crush spread — the crusher's margin</div>", unsafe_allow_html=True)
     dates = [d for d, _, _ in crush]
     vals = [c for _, c, _ in crush]
     shares = [s for _, _, s in crush]
@@ -457,9 +506,9 @@ with tab_crush:
                "product is driving the margin — food vs fuel demand.")
 
 with tab_seas:
-    st.subheader("Seasonality — what the calendar usually does to prices")
-    st.caption("Each year rebased to 100 on its first trading day, averaged by week "
-               "across 2010–present. Shaded band = full historical range.")
+    st.markdown("<div class='section-head'>Seasonality — what the calendar usually does to prices</div>"
+                "<div class='section-sub'>Each year rebased to 100 on its first trading day, averaged by week "
+                "across 2010–present. Shaded band = full historical range.</div>", unsafe_allow_html=True)
     comm_label = st.selectbox("Contract", list(SYM), key="se_comm")
     sym = SYM[comm_label]
     s = seas[sym]
@@ -496,9 +545,9 @@ with tab_seas:
                "actual story. Best used asking 'is this move normal for October?'")
 
 with tab_cot:
-    st.subheader("📡 Crowded-trade radar")
-    st.caption("Where fund positioning sits vs its own history (2020–present). "
-               "Extremes are contrarian signals — crowded longs are vulnerable to a washout.")
+    st.markdown("<div class='section-head'>📡 Crowded-trade radar</div>"
+                "<div class='section-sub'>Where fund positioning sits vs its own history (2020–present). "
+                "Extremes are contrarian signals — crowded longs are vulnerable to a washout.</div>", unsafe_allow_html=True)
     signals = cot_signals()
     label_for = {v: k for k, v in COT_COMMS.items()}
     cols = st.columns(len(signals))
@@ -533,7 +582,7 @@ with tab_cot:
 
 with tab_wasde:
     stats = wasde_stats()
-    st.subheader("Do prices jump on WASDE report days? Yes.")
+    st.markdown("<div class='section-head'>Do prices jump on WASDE report days? Yes.</div>", unsafe_allow_html=True)
     labels = list(stats)
     for i in range(0, len(labels), 3):
         cols = st.columns(3)
@@ -563,9 +612,9 @@ with tab_wasde:
                f"Full study: github.com/josea12345/wasde-report-day-study")
 
 with tab_alerts:
-    st.subheader("Price alert rules")
-    st.caption("Checked every morning after the data refresh. "
-               "Crossing alerts fire once per crossing; big-move alerts fire on the day.")
+    st.markdown("<div class='section-head'>Price alert rules</div>"
+                "<div class='section-sub'>Checked every morning after the data refresh. "
+                "Crossing alerts fire once per crossing; big-move alerts fire on the day.</div>", unsafe_allow_html=True)
     rules = load_alert_rules()
     if not rules:
         st.info("No alert rules configured.")
