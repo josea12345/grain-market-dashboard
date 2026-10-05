@@ -1,0 +1,14 @@
+# Price alert rules for the grain dashboard.
+# Each rule fires once when crossed, then re-arms when price moves back.
+# daily_move_pct fires whenever the day's move exceeds the threshold.
+alerts:
+  - symbol: ZC
+    name: Corn
+    above: 5.75
+    below: 5.00
+    daily_move_pct: 3.0
+  - symbol: ZS
+    name: Soybeans
+    above: 14.00
+    below: 12.50
+    daily_move_pct: 3.0

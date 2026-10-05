@@ -13,6 +13,7 @@ itself every day** with zero manual work.
 | 📈 Prices | Interactive price chart with adjustable date range, period high/low/average |
 | 💰 Positioning | CFTC Commitments of Traders — managed-money net positioning vs futures price (2020–present) |
 | 📰 WASDE Reports | Live event study: are prices more volatile on USDA report days? |
+| 🔔 Alerts | Your price alert rules and their live status — checked every morning |
 
 Headline cards up top: latest corn/soy prices with daily change, current fund
 positioning (381k corn / 247k soy contracts long as of the latest COT report),
@@ -29,6 +30,15 @@ and days since the last WASDE release.
    existing data, so the dashboard never breaks.
 4. Changed data is committed back to the repo, which triggers Streamlit Cloud
    to redeploy with fresh numbers.
+
+### Price alerts
+
+`data/alerts.yaml` holds alert rules (price above/below levels, big daily
+moves). `pipeline/check_alerts.py` evaluates them against the latest closes —
+crossing alerts fire once per crossing and re-arm when price returns inside
+the band. A scheduled check runs every morning and pings on triggers; the
+Alerts tab shows each rule's live status. Edit thresholds in `alerts.yaml` —
+the next check picks them up.
 
 ## Run it locally
 

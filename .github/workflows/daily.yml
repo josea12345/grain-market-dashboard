@@ -1,0 +1,29 @@
+name: daily-data-refresh
+
+on:
+  schedule:
+    - cron: "0 12 * * *"  # ~8am ET, after the prior session's settlement
+  workflow_dispatch: {}   # manual trigger from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Refresh futures prices
+        run: python3 pipeline/fetch_prices.py
+
+      - name: Refresh COT positioning (best-effort)
+        run: python3 pipeline/fetch_cot.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "dashboard-bot"
+          git config user.email "dashboard-bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || (git commit -m "daily data refresh" && git push)

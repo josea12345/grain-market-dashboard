@@ -45,6 +45,29 @@ def load_cot():
 
 
 @st.cache_data(ttl=3600)
+def load_alert_rules():
+    rules, cur = [], None
+    try:
+        with open("data/alerts.yaml") as f:
+            for line in f:
+                s = line.strip()
+                if s.startswith("- symbol:"):
+                    cur = {"symbol": s.split(":")[1].strip()}
+                    rules.append(cur)
+                elif cur is not None and ":" in s and not s.startswith("#"):
+                    k, v = s.split(":", 1)
+                    v = v.strip()
+                    try:
+                        v = float(v)
+                    except ValueError:
+                        pass
+                    cur[k.strip()] = v
+    except FileNotFoundError:
+        pass
+    return rules
+
+
+@st.cache_data(ttl=3600)
 def load_wasde():
     with open("data/wasde_dates.csv", newline="") as f:
         return sorted(datetime.strptime(r["release_date"], "%Y-%m-%d").date()
@@ -114,7 +137,8 @@ c4.metric("Funds net long — soybeans", f"{cot_latest['SOYBEANS'][1] / 1000:,.0
           f"COT {cot_latest['SOYBEANS'][0]}")
 c5.metric("Last WASDE", str(last_wasde), f"{(today - last_wasde).days} days ago")
 
-tab_prices, tab_cot, tab_wasde = st.tabs(["📈 Prices", "💰 Positioning", "📰 WASDE Reports"])
+tab_prices, tab_cot, tab_wasde, tab_alerts = st.tabs(
+    ["📈 Prices", "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
 
 with tab_prices:
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
@@ -184,6 +208,36 @@ with tab_wasde:
     st.pyplot(fig)
     st.caption(f"WASDE is released monthly at 12:00 ET. Last release: {last_wasde}. "
                f"Full study: github.com/josea12345/wasde-report-day-study")
+
+with tab_alerts:
+    st.subheader("Price alert rules")
+    st.caption("Checked every morning after the data refresh. "
+               "Crossing alerts fire once per crossing; big-move alerts fire on the day.")
+    rules = load_alert_rules()
+    if not rules:
+        st.info("No alert rules configured.")
+    else:
+        for rule in rules:
+            sym = SYM.get(rule.get("name", ""), rule["symbol"])
+            d, c, _ = prices[sym][-1]
+            pd, pc, _ = prices[sym][-2]
+            move = 100 * (c - pc) / pc
+            status = []
+            if rule.get("above") and c >= rule["above"]:
+                status.append(f"⚠️ above ${rule['above']:.2f}")
+            if rule.get("below") and c <= rule["below"]:
+                status.append(f"⚠️ below ${rule['below']:.2f}")
+            if rule.get("daily_move_pct") and abs(move) >= rule["daily_move_pct"]:
+                status.append(f"⚠️ moved {move:+.2f}% today")
+            label = rule.get("name", rule["symbol"])
+            with st.expander(f"{label}: ${c:.2f} ({move:+.2f}% today)"
+                             + (" — " + ", ".join(status) if status else " — watching ✅"),
+                             expanded=bool(status)):
+                a1, a2, a3 = st.columns(3)
+                a1.metric("Alert if above", f"${rule['above']:.2f}" if rule.get("above") else "—")
+                a2.metric("Alert if below", f"${rule['below']:.2f}" if rule.get("below") else "—")
+                a3.metric("Alert on daily move", f"±{rule['daily_move_pct']:.1f}%" if rule.get("daily_move_pct") else "—")
+        st.caption("Edit thresholds in data/alerts.yaml on GitHub — the next morning's check picks them up.")
 
 st.divider()
 st.caption("Sources: Yahoo Finance (futures), CFTC Commitments of Traders, USDA WASDE archive. "
