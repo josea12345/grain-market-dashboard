@@ -17,7 +17,7 @@ CFTC fund positioning, USDA WASDE report effects, and price alerts. It
 | 🫘 Crush Spread | Live soybean crush margin (44 lbs meal + 11 lbs oil − 1 bu beans) with full history, 1-yr average, richness percentile, and oil share |
 | 📅 Seasonality | Seasonal price path by week of year (each year rebased to 100) — this year vs the 2010–present average and historical range |
 | 💰 Positioning | 📡 Crowded-trade radar (fund longs/shorts as percentiles of history — contrarian signals) + CFTC managed-money positioning vs price (2020–present) |
-| 📰 WASDE Reports | Live event study: are prices more volatile on USDA report days? (all 6 commodities) |
+| 📰 WASDE Reports | Live event study: report-day volatility (all 6) + "do funds front-run WASDE?" positioning-drift study |
 | 🔔 Alerts | Your price alert rules and their live status — checked every morning |
 
 Headline cards up top: latest prices with daily change for all six
