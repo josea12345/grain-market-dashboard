@@ -1,7 +1,7 @@
-"""Grain Market Dashboard — CBOT corn & soybeans.
+"""Grain Market Dashboard — grain & oilseed futures.
 
-Live view of futures prices, CFTC positioning, and USDA WASDE report effects.
-Data refreshes daily via the pipeline/ scripts + GitHub Actions.
+Live view of futures prices, forward curves, CFTC positioning, USDA WASDE
+report effects, and price alerts. Data refreshes daily via pipeline/.
 """
 import csv
 import sqlite3
@@ -16,20 +16,27 @@ matplotlib.use("Agg")
 st.set_page_config(page_title="Grain Market Dashboard",
                    page_icon="🌽", layout="wide")
 
-SYM = {"Corn": "ZC", "Soybeans": "ZS"}
+SYM = {"Corn": "ZC", "Soybeans": "ZS", "Soybean Meal": "ZM",
+       "Soybean Oil": "ZL", "CBOT Wheat": "ZW", "KC Wheat": "KE"}
+UNIT = {"ZC": "$/bu", "ZS": "$/bu", "ZM": "$/ton",
+        "ZL": "$/lb", "ZW": "$/bu", "KE": "$/bu"}
 COMM = {"ZC": "CORN", "ZS": "SOYBEANS"}
+
+
+def fmt_price(c, unit):
+    return f"${c:,.2f}/{unit[2:]}" if unit == "$/ton" else f"${c:.2f}/{unit[2:]}"
 
 
 @st.cache_data(ttl=3600)
 def load_prices():
     conn = sqlite3.connect("data/prices.db")
     rows = conn.execute(
-        "SELECT symbol, date, close, volume FROM daily_prices ORDER BY date").fetchall()
+        "SELECT symbol, date, close, volume, unit FROM daily_prices ORDER BY date").fetchall()
     conn.close()
     data = {}
-    for s, d, c, v in rows:
+    for s, d, c, v, u in rows:
         data.setdefault(s, []).append(
-            (datetime.strptime(d, "%Y-%m-%d").date(), c / 100, v or 0))
+            (datetime.strptime(d, "%Y-%m-%d").date(), c, v or 0, u or "$/bu"))
     return data
 
 
@@ -42,6 +49,19 @@ def load_cot():
                          r["commodity"], int(r["mmoney_net"]),
                          float(r["futures_close"]) / 100 if r["futures_close"] else None))
     return rows
+
+
+@st.cache_data(ttl=3600)
+def load_curve():
+    conn = sqlite3.connect("data/curve.db")
+    rows = conn.execute(
+        "SELECT commodity, contract, expiry, close, unit FROM forward_curve "
+        "ORDER BY expiry").fetchall()
+    conn.close()
+    data = {}
+    for comm, contract, expiry, c, u in rows:
+        data.setdefault(comm, []).append((contract, expiry, c, u))
+    return data
 
 
 @st.cache_data(ttl=3600)
@@ -106,20 +126,21 @@ def wasde_stats():
 
 
 prices = load_prices()
+curve = load_curve()
 cot = load_cot()
 wasde_dates = load_wasde()
 today = date.today()
 
 st.title("🌽 Grain Market Dashboard")
-st.caption("CBOT corn & soybean futures — prices, CFTC positioning, USDA WASDE effects. "
-           "Data refreshes daily.")
+st.caption("Grain & oilseed futures — prices, forward curves, CFTC positioning, "
+           "USDA WASDE effects. Data refreshes daily.")
 
 # ---- headline metrics ----
 latest = {}
 for label, sym in SYM.items():
-    d, c, _ = prices[sym][-1]
-    pd, pc, _ = prices[sym][-2]
-    latest[label] = (d, c, 100 * (c - pc) / pc)
+    d, c, _, u = prices[sym][-1]
+    pd, pc, _, _ = prices[sym][-2]
+    latest[label] = (d, c, 100 * (c - pc) / pc, u)
 
 cot_latest = {}
 for d_, comm, net, px in cot:
@@ -127,9 +148,9 @@ for d_, comm, net, px in cot:
 last_wasde = max(d for d in wasde_dates if d <= today)
 
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Corn (ZC)", f"${latest['Corn'][1]:.2f}/bu",
+c1.metric("Corn (ZC)", fmt_price(latest['Corn'][1], latest['Corn'][3]),
           f"{latest['Corn'][2]:+.2f}%", delta_color="normal")
-c2.metric("Soybeans (ZS)", f"${latest['Soybeans'][1]:.2f}/bu",
+c2.metric("Soybeans (ZS)", fmt_price(latest['Soybeans'][1], latest['Soybeans'][3]),
           f"{latest['Soybeans'][2]:+.2f}%", delta_color="normal")
 c3.metric("Funds net long — corn", f"{cot_latest['CORN'][1] / 1000:,.0f}k contracts",
           f"COT {cot_latest['CORN'][0]}")
@@ -137,31 +158,67 @@ c4.metric("Funds net long — soybeans", f"{cot_latest['SOYBEANS'][1] / 1000:,.0
           f"COT {cot_latest['SOYBEANS'][0]}")
 c5.metric("Last WASDE", str(last_wasde), f"{(today - last_wasde).days} days ago")
 
-tab_prices, tab_cot, tab_wasde, tab_alerts = st.tabs(
-    ["📈 Prices", "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
+m1, m2, m3, m4 = st.columns(4)
+for col, label in zip((m1, m2, m3, m4),
+                      ("Soybean Meal", "Soybean Oil", "CBOT Wheat", "KC Wheat")):
+    d, c, chg, u = latest[label]
+    col.metric(f"{label} ({SYM[label]})", fmt_price(c, u),
+               f"{chg:+.2f}%", delta_color="normal")
+
+tab_prices, tab_curve, tab_cot, tab_wasde, tab_alerts = st.tabs(
+    ["📈 Prices", "📉 Forward Curve", "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
 
 with tab_prices:
     comm_label = st.selectbox("Contract", list(SYM), key="px_comm")
     sym = SYM[comm_label]
+    unit = UNIT[sym]
     series = prices[sym]
     mind, maxd = series[0][0], series[-1][0]
     start, end = st.slider("Date range", mind, maxd, (maxd.replace(year=maxd.year - 2), maxd),
                            key="px_range")
-    filt = [(d, c) for d, c, v in series if start <= d <= end]
+    filt = [(d, c) for d, c, v, u in series if start <= d <= end]
     closes = [c for _, c in filt]
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot([d for d, _ in filt], closes, linewidth=1.2)
-    ax.set_title(f"{comm_label} futures — daily close ($/bushel)")
+    ax.set_title(f"{comm_label} futures — daily close ({unit})")
     ax.grid(alpha=0.3)
     fig.tight_layout()
     st.pyplot(fig)
     k1, k2, k3 = st.columns(3)
-    k1.metric("Period high", f"${max(closes):.2f}")
-    k2.metric("Period low", f"${min(closes):.2f}")
-    k3.metric("Period average", f"${sum(closes) / len(closes):.2f}")
+    k1.metric("Period high", fmt_price(max(closes), unit))
+    k2.metric("Period low", fmt_price(min(closes), unit))
+    k3.metric("Period average", fmt_price(sum(closes) / len(closes), unit))
+
+with tab_curve:
+    comm_label = st.selectbox("Contract", list(SYM), key="cv_comm")
+    sym = SYM[comm_label]
+    unit = UNIT[sym]
+    rows = curve.get(sym, [])
+    if not rows:
+        st.info("Forward curve data not available yet — refreshes with the daily pipeline.")
+    else:
+        contracts = [r[0] for r in rows]
+        closes = [r[2] for r in rows]
+        spread = closes[-1] - closes[0]
+        shape = "contango (deferred higher — market paying to store it)" if spread > 0 \
+            else "backwardation (front higher — spot shortage bid)"
+        st.subheader(f"{comm_label} forward curve — {shape}")
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(contracts, closes, marker="o", linewidth=1.5)
+        ax.set_title(f"{comm_label} — price by contract month ({unit})")
+        ax.grid(alpha=0.3)
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        fig.tight_layout()
+        st.pyplot(fig)
+        f1, f2 = st.columns(2)
+        f1.metric("Front contract", f"{contracts[0]}  {fmt_price(closes[0], unit)}")
+        f2.metric("Farthest contract", f"{contracts[-1]}  {fmt_price(closes[-1], unit)}",
+                  f"{spread:+.2f} {unit} vs front")
+        st.caption("Contango usually means comfortable supply; backwardation means "
+                   "the market wants grain now — often bullish.")
 
 with tab_cot:
-    comm_label = st.selectbox("Contract", list(SYM), key="cot_comm")
+    comm_label = st.selectbox("Contract", ["Corn", "Soybeans"], key="cot_comm")
     comm = COMM[SYM[comm_label]]
     rows = [(d, n, p) for d, c, n, p in cot if c == comm]
     fig, ax1 = plt.subplots(figsize=(10, 4.5))
@@ -218,24 +275,25 @@ with tab_alerts:
         st.info("No alert rules configured.")
     else:
         for rule in rules:
-            sym = SYM.get(rule.get("name", ""), rule["symbol"])
-            d, c, _ = prices[sym][-1]
-            pd, pc, _ = prices[sym][-2]
+            sym = rule["symbol"]
+            unit = UNIT.get(sym, "$/bu")
+            d, c, _, _ = prices[sym][-1]
+            pd, pc, _, _ = prices[sym][-2]
             move = 100 * (c - pc) / pc
             status = []
             if rule.get("above") and c >= rule["above"]:
-                status.append(f"⚠️ above ${rule['above']:.2f}")
+                status.append(f"⚠️ above {fmt_price(rule['above'], unit)}")
             if rule.get("below") and c <= rule["below"]:
-                status.append(f"⚠️ below ${rule['below']:.2f}")
+                status.append(f"⚠️ below {fmt_price(rule['below'], unit)}")
             if rule.get("daily_move_pct") and abs(move) >= rule["daily_move_pct"]:
                 status.append(f"⚠️ moved {move:+.2f}% today")
             label = rule.get("name", rule["symbol"])
-            with st.expander(f"{label}: ${c:.2f} ({move:+.2f}% today)"
+            with st.expander(f"{label}: {fmt_price(c, unit)} ({move:+.2f}% today)"
                              + (" — " + ", ".join(status) if status else " — watching ✅"),
                              expanded=bool(status)):
                 a1, a2, a3 = st.columns(3)
-                a1.metric("Alert if above", f"${rule['above']:.2f}" if rule.get("above") else "—")
-                a2.metric("Alert if below", f"${rule['below']:.2f}" if rule.get("below") else "—")
+                a1.metric("Alert if above", fmt_price(rule['above'], unit) if rule.get("above") else "—")
+                a2.metric("Alert if below", fmt_price(rule['below'], unit) if rule.get("below") else "—")
                 a3.metric("Alert on daily move", f"±{rule['daily_move_pct']:.1f}%" if rule.get("daily_move_pct") else "—")
         st.caption("Edit thresholds in data/alerts.yaml on GitHub — the next morning's check picks them up.")
 

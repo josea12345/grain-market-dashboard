@@ -38,10 +38,14 @@ def load_rules():
 def latest_closes(symbol):
     conn = sqlite3.connect(DB)
     rows = conn.execute(
-        "SELECT date, close/100.0 FROM daily_prices WHERE symbol=? "
+        "SELECT date, close, unit FROM daily_prices WHERE symbol=? "
         "ORDER BY date DESC LIMIT 2", (symbol,)).fetchall()
     conn.close()
-    return rows  # [(date, price), ...] newest first
+    return rows  # [(date, price, unit), ...] newest first
+
+
+def fmt(price, unit):
+    return f"${price:,.2f}{unit}" if unit == "$/ton" else f"${price:.2f}"
 
 
 def main():
@@ -53,7 +57,7 @@ def main():
         rows = latest_closes(sym)
         if len(rows) < 2:
             continue
-        (d1, p1), (d0, p0) = rows[0], rows[1]
+        (d1, p1, u1), (d0, p0, u0) = rows[0], rows[1]
         move = 100 * (p1 - p0) / p0
         key = f"{sym}"
 
@@ -65,7 +69,7 @@ def main():
             armed = state.get(key, {}).get(side, True)
             if crossed and armed:
                 fired.append(
-                    f"{name} crossed ${level:.2f} ({side}): now ${p1:.2f} on {d1}")
+                    f"{name} crossed {fmt(level, u1)} ({side}): now {fmt(p1, u1)} on {d1}")
                 state.setdefault(key, {})[side] = False
             elif side == "above" and p1 < level:
                 state.setdefault(key, {})[side] = True
@@ -76,7 +80,7 @@ def main():
         thresh = rule.get("daily_move_pct")
         if thresh and abs(move) >= thresh:
             fired.append(
-                f"{name} moved {move:+.2f}% today (${p0:.2f} -> ${p1:.2f} on {d1})")
+                f"{name} moved {move:+.2f}% today ({fmt(p0, u1)} -> {fmt(p1, u1)} on {d1})")
 
     with open(STATE, "w") as f:
         json.dump(state, f, indent=2)

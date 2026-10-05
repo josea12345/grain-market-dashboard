@@ -5,10 +5,30 @@ alerts:
   - symbol: ZC
     name: Corn
     above: 5.75
-    below: 5.00
+    below: 4.50
     daily_move_pct: 3.0
   - symbol: ZS
     name: Soybeans
     above: 14.00
-    below: 12.50
+    below: 12.00
+    daily_move_pct: 3.0
+  - symbol: ZM
+    name: Soybean Meal
+    above: 400
+    below: 300
+    daily_move_pct: 3.0
+  - symbol: ZL
+    name: Soybean Oil
+    above: 0.80
+    below: 0.55
+    daily_move_pct: 3.0
+  - symbol: ZW
+    name: CBOT Wheat
+    above: 7.50
+    below: 5.50
+    daily_move_pct: 3.0
+  - symbol: KE
+    name: KC Wheat
+    above: 8.00
+    below: 6.00
     daily_move_pct: 3.0
