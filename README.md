@@ -13,7 +13,7 @@ CFTC fund positioning, USDA WASDE report effects, and price alerts. It
 |-----|---------|
 | 🌅 Brief | Auto-generated market brief — one synthesis of everything: biggest movers, crush, positioning extremes, seasonality, curves, WASDE countdown |
 | 📈 Prices | Interactive price chart with adjustable date range, period high/low/average (all 6 commodities) |
-| 📉 Forward Curve | Term structure across the next 8 contract months — contango vs backwardation |
+| 📉 Forward Curve | Term structure across the next 8 contract months — contango vs backwardation, plus a storage breakeven calculator (does the carry cover interest + storage?) |
 | 🫘 Crush Spread | Live soybean crush margin (44 lbs meal + 11 lbs oil − 1 bu beans) with full history, 1-yr average, richness percentile, and oil share |
 | 📅 Seasonality | Seasonal price path by week of year (each year rebased to 100) — this year vs the 2010–present average and historical range |
 | 💰 Positioning | 📡 Crowded-trade radar (fund longs/shorts as percentiles of history — contrarian signals) + CFTC managed-money positioning vs price (2020–present) |

@@ -527,6 +527,59 @@ with tab_curve:
                   f"{spread:+.2f} {unit} vs front")
         st.caption("Contango usually means comfortable supply; backwardation means "
                    "the market wants grain now — often bullish.")
+    st.divider()
+    st.markdown("<div class='section-head'>🌾 Storage breakeven — does the carry pay you to store?</div>"
+                "<div class='section-sub'>The market pays carry (deferred minus front) to whoever stores grain. "
+                "This weighs it against your cost of carry: interest on the grain's value plus physical storage. "
+                "Positive = storing earns · Negative = sell now.</div>",
+                unsafe_allow_html=True)
+    s_comm = st.selectbox("Contract", ["Corn", "Soybeans", "CBOT Wheat", "KC Wheat"],
+                          key="st_comm")
+    s_sym = SYM[s_comm]
+    s_rows = curve.get(s_sym, [])
+    if len(s_rows) < 2:
+        st.info("Not enough curve data for this commodity yet.")
+    else:
+        r1, r2 = st.columns(2)
+        rate = r1.slider("Interest rate (annual %)", 0.0, 15.0, 8.0, 0.25, key="st_rate") / 100
+        stor = r2.slider("Storage cost ($/bu/month)", 0.0, 0.20, 0.05, 0.01, key="st_stor")
+        front_px = s_rows[0][2]
+        front_dt = datetime.strptime(s_rows[0][1], "%Y-%m-%d").date()
+        results = []
+        for contract, expiry, px, u in s_rows[1:]:
+            edt = datetime.strptime(expiry, "%Y-%m-%d").date()
+            months = (edt.year - front_dt.year) * 12 + (edt.month - front_dt.month)
+            if months <= 0:
+                continue
+            carry = px - front_px
+            int_cost = front_px * rate * (months * 30.44 / 365)
+            stor_cost = stor * months
+            results.append((contract, months, carry, int_cost, stor_cost,
+                            carry - int_cost - stor_cost))
+        if results:
+            best = max(results, key=lambda r: r[5])
+            v1, v2 = st.columns(2)
+            v1.metric("Best month to store into",
+                      f"{best[0]} ({best[1]} mo)",
+                      f"{best[5]:+.2f} $/bu net of carry costs")
+            v2.metric("Market carry to that month",
+                      f"{best[2]:+.2f} $/bu",
+                      f"costs: {best[3] + best[4]:.2f} $/bu (interest + storage)",
+                      delta_color="off")
+            fig, ax = plt.subplots(figsize=(10, 3.6))
+            labels = [r[0] for r in results]
+            nets = [r[5] for r in results]
+            colors = ["#2D6A4F" if n >= 0 else "#C0392B" for n in nets]
+            ax.bar(labels, nets, color=colors, alpha=0.85)
+            ax.axhline(0, color="black", linewidth=0.9)
+            ax.set_title(f"{s_comm}: net return to storage by contract "
+                         f"(@ {rate * 100:.2f}% interest, ${stor:.2f}/bu/mo)")
+            ax.set_ylabel("Net $/bu")
+            ax.grid(axis="y", alpha=0.25)
+            fig.tight_layout()
+            st.pyplot(fig)
+            st.caption("Full carry belongs to whoever can store cheapest — on-farm storage "
+                       "often beats commercial rates, which is why elevators watch this spread.")
 
 with tab_crush:
     st.markdown("<div class='section-head'>Soybean crush spread — the crusher's margin</div>", unsafe_allow_html=True)
