@@ -118,6 +118,34 @@ def cot_signals():
 
 
 @st.cache_data(ttl=3600)
+def load_seasonality():
+    """Seasonal path per commodity: each year rebased to 100 on its first
+    trading day, then averaged by ISO week across all years (2010–present).
+    Returns {symbol: {"avg": {week: v}, "lo": ..., "hi": ..., "cur": [(date, v)]}}.
+    """
+    out = {}
+    for sym in SYM.values():
+        by_year = {}
+        for d, c, _, _ in prices[sym]:
+            by_year.setdefault(d.year, []).append((d, c))
+        weekly = {}
+        for pts in by_year.values():
+            pts.sort()
+            base = pts[0][1]
+            for d, c in pts:
+                weekly.setdefault(d.isocalendar()[1], []).append(100 * c / base)
+        cur_pts = sorted(by_year.get(today.year, []))
+        cur_base = cur_pts[0][1] if cur_pts else 1
+        out[sym] = {
+            "avg": {w: sum(v) / len(v) for w, v in weekly.items()},
+            "lo": {w: min(v) for w, v in weekly.items()},
+            "hi": {w: max(v) for w, v in weekly.items()},
+            "cur": [(d, 100 * c / cur_base) for d, c in cur_pts],
+        }
+    return out
+
+
+@st.cache_data(ttl=3600)
 def load_alert_rules():
     rules, cur = [], None
     try:
@@ -178,12 +206,14 @@ def wasde_stats():
     return out
 
 
+today = date.today()
+
 prices = load_prices()
 curve = load_curve()
 crush = load_crush()
+seas = load_seasonality()
 cot = load_cot()
 wasde_dates = load_wasde()
-today = date.today()
 
 st.title("🌽 Grain Market Dashboard")
 st.caption("Grain & oilseed futures — prices, forward curves, CFTC positioning, "
@@ -219,8 +249,8 @@ for col, label in zip((m1, m2, m3, m4),
     col.metric(f"{label} ({SYM[label]})", fmt_price(c, u),
                f"{chg:+.2f}%", delta_color="normal")
 
-tab_prices, tab_curve, tab_crush, tab_cot, tab_wasde, tab_alerts = st.tabs(
-    ["📈 Prices", "📉 Forward Curve", "🫘 Crush Spread",
+tab_prices, tab_curve, tab_crush, tab_seas, tab_cot, tab_wasde, tab_alerts = st.tabs(
+    ["📈 Prices", "📉 Forward Curve", "🫘 Crush Spread", "📅 Seasonality",
      "💰 Positioning", "📰 WASDE Reports", "🔔 Alerts"])
 
 with tab_prices:
@@ -308,6 +338,45 @@ with tab_crush:
                "and oil. Wide crush → crushers run hard and buy more beans (supports "
                "soybean prices). Thin crush → plants slow down. Oil share shows which "
                "product is driving the margin — food vs fuel demand.")
+
+with tab_seas:
+    st.subheader("Seasonality — what the calendar usually does to prices")
+    st.caption("Each year rebased to 100 on its first trading day, averaged by week "
+               "across 2010–present. Shaded band = full historical range.")
+    comm_label = st.selectbox("Contract", list(SYM), key="se_comm")
+    sym = SYM[comm_label]
+    s = seas[sym]
+    weeks = sorted(s["avg"])
+    avg = [s["avg"][w] for w in weeks]
+    lo = [s["lo"][w] for w in weeks]
+    hi = [s["hi"][w] for w in weeks]
+    cur_w = [d.isocalendar()[1] for d, _ in s["cur"]]
+    cur_v = [v for _, v in s["cur"]]
+    this_wk = today.isocalendar()[1]
+    wk_avg = s["avg"].get(this_wk)
+    cur_now = cur_v[-1] if cur_v else None
+    fwd_wk = min(this_wk + 8, max(weeks))
+    drift = s["avg"].get(fwd_wk, wk_avg) - wk_avg if wk_avg else 0
+    m1, m2, m3 = st.columns(3)
+    m1.metric(f"{today.year} vs seasonal norm",
+              f"{cur_now - wk_avg:+.1f} pts" if cur_now and wk_avg else "—",
+              "above seasonal" if cur_now and wk_avg and cur_now > wk_avg else "below seasonal")
+    m2.metric("Seasonal drift, next 8 weeks", f"{drift:+.1f} pts",
+              "tends to firm" if drift > 0 else "tends to fade")
+    m3.metric("Weeks of history", f"{len(weeks)}", f"{len(s['cur'])} trading days this year")
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+    ax.fill_between(weeks, lo, hi, alpha=0.18, color="gray", label="Historical range")
+    ax.plot(weeks, avg, linewidth=1.6, label="Seasonal average")
+    ax.plot(cur_w, cur_v, linewidth=2.2, color="#d62728", label=str(today.year))
+    ax.axvline(this_wk, color="black", linestyle=":", linewidth=1)
+    ax.set_title(f"{comm_label} — seasonal path (rebased to 100 each January)")
+    ax.set_xlabel("Week of year")
+    ax.grid(alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    st.pyplot(fig)
+    st.caption("Seasonality is tendency, not destiny — weather and demand write the "
+               "actual story. Best used asking 'is this move normal for October?'")
 
 with tab_cot:
     st.subheader("📡 Crowded-trade radar")
