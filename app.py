@@ -88,6 +88,36 @@ def load_crush():
 
 
 @st.cache_data(ttl=3600)
+def cot_signals():
+    """Crowded-trade radar: current managed-money net as a percentile of its
+    own history, plus the 4-week change. Returns {commodity: {...}}."""
+    from collections import defaultdict
+    by_comm = defaultdict(list)
+    for d, c, n, p in cot:
+        by_comm[c].append((d, n))
+    out = {}
+    for comm, series in by_comm.items():
+        series.sort()
+        nets = [n for _, n in series]
+        cur = nets[-1]
+        pctile = 100 * sum(1 for v in nets if v <= cur) / len(nets)
+        chg4 = cur - nets[-5] if len(nets) >= 5 else 0
+        if pctile >= 90:
+            sig, hint = "🔴 Extremely crowded LONG", "contrarian bearish"
+        elif pctile >= 75:
+            sig, hint = "🟠 Crowded long", "getting stretched"
+        elif pctile <= 10:
+            sig, hint = "🟢 Extremely crowded SHORT", "contrarian bullish"
+        elif pctile <= 25:
+            sig, hint = "🟡 Crowded short", "getting stretched"
+        else:
+            sig, hint = "⚪ Neutral", "no extreme"
+        out[comm] = {"net": cur, "pctile": pctile, "chg4": chg4,
+                     "date": series[-1][0], "signal": sig, "hint": hint}
+    return out
+
+
+@st.cache_data(ttl=3600)
 def load_alert_rules():
     rules, cur = [], None
     try:
@@ -280,6 +310,20 @@ with tab_crush:
                "product is driving the margin — food vs fuel demand.")
 
 with tab_cot:
+    st.subheader("📡 Crowded-trade radar")
+    st.caption("Where fund positioning sits vs its own history (2020–present). "
+               "Extremes are contrarian signals — crowded longs are vulnerable to a washout.")
+    signals = cot_signals()
+    label_for = {v: k for k, v in COT_COMMS.items()}
+    cols = st.columns(len(signals))
+    for col, comm in zip(cols, COT_COMMS.values()):
+        s = signals[comm]
+        col.metric(label_for[comm],
+                   f"{s['net'] / 1000:+,.0f}k net",
+                   f"{s['pctile']:.0f}th percentile · {s['chg4'] / 1000:+,.0f}k in 4 wks")
+        col.caption(f"{s['signal']} — {s['hint']}")
+    st.caption(f"Latest COT report: {max(s['date'] for s in signals.values())}")
+    st.divider()
     comm_label = st.selectbox("Contract", list(COT_COMMS), key="cot_comm")
     comm = COT_COMMS[comm_label]
     unit = UNIT[SYM[comm_label]]
