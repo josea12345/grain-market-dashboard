@@ -20,7 +20,10 @@ SYM = {"Corn": "ZC", "Soybeans": "ZS", "Soybean Meal": "ZM",
        "Soybean Oil": "ZL", "CBOT Wheat": "ZW", "KC Wheat": "KE"}
 UNIT = {"ZC": "$/bu", "ZS": "$/bu", "ZM": "$/ton",
         "ZL": "$/lb", "ZW": "$/bu", "KE": "$/bu"}
-COMM = {"ZC": "CORN", "ZS": "SOYBEANS"}
+# CFTC disaggregated COT has no KC wheat managed-money series
+COT_COMMS = {"Corn": "CORN", "Soybeans": "SOYBEANS",
+             "Soybean Meal": "SOYBEAN MEAL", "Soybean Oil": "SOYBEAN OIL",
+             "CBOT Wheat": "WHEAT-SRW"}
 
 
 def fmt_price(c, unit):
@@ -47,7 +50,7 @@ def load_cot():
         for r in csv.DictReader(f):
             rows.append((datetime.strptime(r["report_date"], "%Y-%m-%d").date(),
                          r["commodity"], int(r["mmoney_net"]),
-                         float(r["futures_close"]) / 100 if r["futures_close"] else None))
+                         float(r["futures_close"]) if r["futures_close"] else None))
     return rows
 
 
@@ -218,8 +221,9 @@ with tab_curve:
                    "the market wants grain now — often bullish.")
 
 with tab_cot:
-    comm_label = st.selectbox("Contract", ["Corn", "Soybeans"], key="cot_comm")
-    comm = COMM[SYM[comm_label]]
+    comm_label = st.selectbox("Contract", list(COT_COMMS), key="cot_comm")
+    comm = COT_COMMS[comm_label]
+    unit = UNIT[SYM[comm_label]]
     rows = [(d, n, p) for d, c, n, p in cot if c == comm]
     fig, ax1 = plt.subplots(figsize=(10, 4.5))
     ax1.bar([d for d, _, _ in rows], [n / 1000 for _, n, _ in rows],
@@ -229,25 +233,28 @@ with tab_cot:
     ax2 = ax1.twinx()
     ax2.plot([d for d, _, _ in rows], [p for _, _, p in rows],
              color="black", linewidth=1.2)
-    ax2.set_ylabel("Futures price ($/bu)")
+    ax2.set_ylabel(f"Futures price ({unit})")
     ax1.set_title(f"{comm_label} — fund positioning vs price (CFTC COT)")
     ax1.grid(alpha=0.25)
     fig.tight_layout()
     st.pyplot(fig)
     st.caption("Managed money = hedge funds. When bars are high, funds are crowded long — "
-               "vulnerable to a squeeze if the market turns.")
+               "vulnerable to a squeeze if the market turns. "
+               "KC wheat has no managed-money series in the CFTC disaggregated reports.")
 
 with tab_wasde:
     stats = wasde_stats()
     st.subheader("Do prices jump on WASDE report days? Yes.")
-    w1, w2 = st.columns(2)
-    for col, label in zip((w1, w2), ("Corn", "Soybeans")):
-        s = stats[label]
-        col.metric(f"{label} — avg daily move on WASDE days",
-                   f"{s['wasde_avg']:.2f}%",
-                   f"{s['wasde_avg'] / s['normal_avg']:.2f}x normal days")
-        col.caption(f"Big moves (>2%): {s['wasde_big_pct']:.1f}% of WASDE days vs "
-                    f"{s['normal_big_pct']:.1f}% normally · {s['wasde_days']} report days studied")
+    labels = list(stats)
+    for i in range(0, len(labels), 3):
+        cols = st.columns(3)
+        for col, label in zip(cols, labels[i:i + 3]):
+            s = stats[label]
+            col.metric(f"{label} — avg daily move on WASDE days",
+                       f"{s['wasde_avg']:.2f}%",
+                       f"{s['wasde_avg'] / s['normal_avg']:.2f}x normal days")
+            col.caption(f"Big moves (>2%): {s['wasde_big_pct']:.1f}% of WASDE days vs "
+                        f"{s['normal_big_pct']:.1f}% normally · {s['wasde_days']} report days studied")
     fig, ax = plt.subplots(figsize=(9, 3.8))
     labels = list(stats)
     x = range(len(labels))

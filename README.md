@@ -13,8 +13,8 @@ CFTC fund positioning, USDA WASDE report effects, and price alerts. It
 |-----|---------|
 | 📈 Prices | Interactive price chart with adjustable date range, period high/low/average (all 6 commodities) |
 | 📉 Forward Curve | Term structure across the next 8 contract months — contango vs backwardation |
-| 💰 Positioning | CFTC Commitments of Traders — managed-money net positioning vs futures price (corn & soybeans, 2020–present) |
-| 📰 WASDE Reports | Live event study: are prices more volatile on USDA report days? |
+| 💰 Positioning | CFTC Commitments of Traders — managed-money net positioning vs futures price (corn, soybeans, meal, oil, CBOT wheat; 2020–present) |
+| 📰 WASDE Reports | Live event study: are prices more volatile on USDA report days? (all 6 commodities) |
 | 🔔 Alerts | Your price alert rules and their live status — checked every morning |
 
 Headline cards up top: latest prices with daily change for all six
@@ -60,7 +60,7 @@ streamlit run app.py
 ## Data sources
 
 - Futures prices: Yahoo Finance (`ZC=F`, `ZS=F`, `ZM=F`, `ZL=F`, `ZW=F`, `KE=F`), 2010–present, ~25,000 trading days
-- Positioning: [CFTC Commitments of Traders](https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm), 704 weekly reports
+- Positioning: [CFTC Commitments of Traders](https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm) (disaggregated, managed money), 1,760 weekly reports 2020–2026 across 5 markets
 - Reports: [USDA WASDE archive](https://www.usda.gov/about-usda/general-information/staff-offices/office-chief-economist/commodity-markets/wasde-report), 80 releases 2020–2026
 
 ## Related projects
