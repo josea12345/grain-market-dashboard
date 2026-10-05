@@ -4,7 +4,7 @@ A live dashboard for CBOT corn and soybean futures — daily prices, CFTC fund
 positioning, and the market impact of USDA WASDE reports — that **refreshes
 itself every day** with zero manual work.
 
-**Live demo:** *(deploy to Streamlit Community Cloud — 3 clicks, see below)*
+**Live demo:** https://grain-market-dashboard.streamlit.app
 
 ## What's inside
 
